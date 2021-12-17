@@ -1,27 +1,44 @@
-import { NextApiRequest, NextApiResponse } from "next";
+import Prismic from '@prismicio/client';
+import { Document } from '@prismicio/client/types/documents';
 
-import { getPrismicClient } from "services/prismic";
+const apiEndpoint = process.env.PRISMIC_API_ENDPOINT;
+const accessToken = process.env.PRISMIC_ACCESS_TOKEN;
 
-import { Document } from "@prismicio/client/types/documents";
+function linkResolver(doc: Document): string {
+    if (doc.type === 'posts') {
+        return `/post/${doc.uid}`;
+    }
+    return '/';
+}
 
-const linkResolver = (doc: Document): string => (doc.type === "posts" ? `/post/${doc.uid}` : "/");
+// Client method to query from the Prismic repo
+const Client = (req = null) =>
+    Prismic.client(apiEndpoint, createClientOptions(req, accessToken));
 
-export default async (req: NextApiRequest, res: NextApiResponse): Promise<void> => {
-	const { token: ref, documentId } = req.query;
-	const notFoundPort = 401;
-	const foundPort = 302;
-
-	const redirectUrl = await getPrismicClient(req)
-		.getPreviewResolver(String(ref), String(documentId))
-		.resolve(linkResolver, "/");
-
-	if (!redirectUrl) {
-		res.status(notFoundPort).json({ message: "Invalid token" });
-
-		return;
-	}
-
-	res.setPreviewData({ ref });
-	res.writeHead(foundPort, { Location: redirectUrl });
-	res.end();
+const createClientOptions = (req = null, prismicAccessToken = null) => {
+    const reqOption = req ? { req } : {};
+    const accessTokenOption = prismicAccessToken
+        ? { accessToken: prismicAccessToken }
+        : {};
+    return {
+        ...reqOption,
+        ...accessTokenOption,
+    };
 };
+
+const Preview = async (req, res) => {
+    const { token: ref, documentId } = req.query;
+    const redirectUrl = await Client(req)
+        .getPreviewResolver(ref, documentId)
+        .resolve(linkResolver, '/');
+
+    if (!redirectUrl) {
+        return res.status(401).json({ message: 'Invalid token' });
+    }
+
+    res.setPreviewData({ ref });
+    res.writeHead(302, { Location: `${redirectUrl}` });
+    res.end();
+};
+
+export default Preview;
